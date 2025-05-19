@@ -43,7 +43,7 @@ export function SidebarNav() {
                 alt="Logo RUUFE"
                 width={120}
                 height={40}
-                className="h-8 w-auto"
+                className="h-auto w-75"
                 onError={(e) => {
                   // Fallback si la imagen no carga
                   e.currentTarget.src = "/placeholder.svg?height=40&width=120"

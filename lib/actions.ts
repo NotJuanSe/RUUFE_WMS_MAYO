@@ -88,8 +88,11 @@ export async function createPickingOrder(htmlContent: string) {
       where: { orderId: order.id },
     })
 
+    // Revalidar todas las rutas que podrían verse afectadas
     revalidatePath("/")
     revalidatePath("/picking/pendientes")
+    revalidatePath("/picking/parciales")
+    revalidatePath("/picking/completadas")
 
     return {
       success: true,
@@ -314,10 +317,14 @@ export async function updatePickingOrder(
         },
       })
 
+      // Revalidar todas las rutas que podrían verse afectadas
       revalidatePath("/")
       revalidatePath("/picking/pendientes")
       revalidatePath("/picking/parciales")
       revalidatePath("/picking/completadas")
+      revalidatePath(`/picking/proceso/${id}`)
+      revalidatePath(`/reportes/picking/${id}`)
+      revalidatePath("/reportes/faltantes")
 
       return { success: true }
     })
@@ -580,5 +587,218 @@ export async function getMissingItems() {
         estimatedValue: 0,
       },
     }
+  }
+}
+
+export async function getPickingOrders() {
+  try {
+    const orders = await prisma.pickingOrder.findMany({
+      include: {
+        items: {
+          include: {
+            product: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    })
+
+    // Transformar los datos para que coincidan con el formato esperado por la tabla
+    return orders.map((order) => {
+      // Calcular la duración en minutos
+      const startTime = order.createdAt.toISOString()
+      const endTime = order.completedAt ? order.completedAt.toISOString() : new Date().toISOString()
+
+      const durationMs = new Date(endTime).getTime() - new Date(startTime).getTime()
+      const durationMinutes = Math.round(durationMs / (1000 * 60))
+
+      // Calcular el total de productos y productos recogidos
+      const itemsCount = order.items.reduce((sum, item) => sum + item.quantity, 0)
+      const pickedItems = order.items.reduce((sum, item) => sum + item.picked, 0)
+
+      // Calcular la eficiencia (productos por minuto)
+      const itemsPerMinute = durationMinutes > 0 ? pickedItems / durationMinutes : 0
+
+      return {
+        id: order.id,
+        invoiceNumber: order.invoiceNumber,
+        clientName: order.clientName,
+        startTime,
+        endTime,
+        duration: durationMinutes,
+        itemsCount,
+        pickedItems,
+        itemsPerMinute,
+        status: order.status,
+      }
+    })
+  } catch (error) {
+    console.error("Error al obtener órdenes:", error)
+    return []
+  }
+}
+
+// Añadir esta función a tu archivo actions.ts existente
+
+// Función para obtener datos para el gráfico de rendimiento agrupados por fecha
+export async function getChartData() {
+  try {
+    // Obtener todas las órdenes completadas
+    const completedOrders = await prisma.pickingOrder.findMany({
+      where: {
+        status: "completed",
+        completedAt: { not: null },
+      },
+      include: {
+        items: true,
+      },
+      orderBy: {
+        completedAt: "desc",
+      },
+    })
+
+    // Agrupar órdenes por fecha
+    const ordersByDate = completedOrders.reduce(
+      (acc, order) => {
+        // Formatear la fecha como DD/MM
+        const completedDate = order.completedAt!
+        const dateKey = `${completedDate.getDate().toString().padStart(2, "0")}/${(completedDate.getMonth() + 1).toString().padStart(2, "0")}`
+
+        // Calcular duración en minutos
+        const durationMs = completedDate.getTime() - order.createdAt.getTime()
+        const durationMinutes = Math.round(durationMs / (1000 * 60))
+
+        // Si la fecha no existe en el acumulador, inicializarla
+        if (!acc[dateKey]) {
+          acc[dateKey] = {
+            totalTime: 0,
+            orderCount: 0,
+          }
+        }
+
+        // Acumular datos
+        acc[dateKey].totalTime += durationMinutes
+        acc[dateKey].orderCount += 1
+
+        return acc
+      },
+      {} as Record<string, { totalTime: number; orderCount: number }>,
+    )
+
+    // Convertir el objeto agrupado a un array para el gráfico
+    const chartData = Object.entries(ordersByDate).map(([fecha, data]) => {
+      return {
+        fecha,
+        tiempoPromedio: Math.round(data.totalTime / data.orderCount),
+        ordenesCompletadas: data.orderCount,
+      }
+    })
+
+    // Ordenar por fecha (asumiendo formato DD/MM)
+    chartData.sort((a, b) => {
+      const [dayA, monthA] = a.fecha.split("/").map(Number)
+      const [dayB, monthB] = b.fecha.split("/").map(Number)
+
+      if (monthA !== monthB) return monthA - monthB
+      return dayA - dayB
+    })
+
+    // Limitar a los últimos 7 días con datos
+    return chartData.slice(-7)
+  } catch (error) {
+    console.error("Error al obtener datos para el gráfico:", error)
+    return []
+  }
+}
+
+// Función para obtener la lista de clientes únicos
+export async function getUniqueClients() {
+  try {
+    const clients = await prisma.pickingOrder.findMany({
+      select: {
+        clientName: true,
+      },
+      distinct: ["clientName"],
+      orderBy: {
+        clientName: "asc",
+      },
+    })
+
+    return clients.map((client) => client.clientName)
+  } catch (error) {
+    console.error("Error al obtener la lista de clientes:", error)
+    return []
+  }
+}
+
+// Función para obtener datos de rendimiento filtrados
+export async function getFilteredPerformanceData(startDate?: string, endDate?: string, clientName?: string) {
+  try {
+    // Construir el objeto de filtro
+    const where: any = {
+      status: "completed",
+      completedAt: { not: null },
+    }
+
+    // Añadir filtros de fecha si están presentes
+    if (startDate) {
+      where.completedAt = {
+        ...where.completedAt,
+        gte: new Date(startDate),
+      }
+    }
+
+    if (endDate) {
+      const endDateObj = new Date(endDate)
+      endDateObj.setHours(23, 59, 59, 999) // Establecer al final del día
+      where.completedAt = {
+        ...where.completedAt,
+        lte: endDateObj,
+      }
+    }
+
+    // Añadir filtro de cliente si está presente
+    if (clientName && clientName !== "all") {
+      where.clientName = clientName
+    }
+
+    // Obtener las órdenes filtradas
+    const pickingOrders = await prisma.pickingOrder.findMany({
+      where,
+      include: {
+        items: true,
+      },
+      orderBy: {
+        completedAt: "desc",
+      },
+    })
+
+    // Transformar los datos para el formato de la tabla de rendimiento
+    return pickingOrders.map((order) => {
+      const startTime = order.createdAt.toISOString()
+      const endTime = order.completedAt!.toISOString()
+      const durationMs = order.completedAt!.getTime() - order.createdAt.getTime()
+      const duration = Math.round(durationMs / (1000 * 60)) // Duration in minutes
+      const itemsCount = order.items.reduce((sum, item) => sum + item.quantity, 0)
+      const pickedItems = order.items.reduce((sum, item) => sum + item.picked, 0)
+      const itemsPerMinute = duration > 0 ? Number.parseFloat((pickedItems / duration).toFixed(2)) : 0
+
+      return {
+        id: order.id,
+        invoiceNumber: order.invoiceNumber,
+        clientName: order.clientName,
+        startTime,
+        endTime,
+        duration,
+        itemsCount,
+        pickedItems,
+        itemsPerMinute,
+      }
+    })
+  } catch (error) {
+    console.error("Error al obtener datos de rendimiento filtrados:", error)
+    return []
   }
 }

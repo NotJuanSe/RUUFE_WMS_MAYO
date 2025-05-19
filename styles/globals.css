@@ -92,3 +92,125 @@ body {
     @apply bg-background text-foreground;
   }
 }
+
+/* Estilos personalizados para el calendario */
+.rdp {
+  --rdp-cell-size: 40px; /* Tamaño de las celdas */
+  --rdp-accent-color: hsl(var(--primary));
+  --rdp-background-color: hsl(var(--accent));
+  margin: 0;
+}
+
+.rdp-months {
+  justify-content: center;
+}
+
+.rdp-month {
+  background-color: hsl(var(--background));
+}
+
+.rdp-caption {
+  padding-bottom: 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  text-align: center;
+}
+
+.rdp-caption_label {
+  font-weight: 500;
+  font-size: 1rem;
+}
+
+/* Solución radical para ocultar los encabezados de días */
+.rdp-head_row {
+  display: none !important;
+  visibility: hidden !important;
+  height: 0 !important;
+  overflow: hidden !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.rdp-head_cell {
+  display: none !important;
+  visibility: hidden !important;
+  height: 0 !important;
+  overflow: hidden !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+/* Asegurarse de que la tabla no tenga espacio para la fila de encabezados */
+.rdp-table {
+  border-spacing: 0 !important;
+}
+
+.rdp-row {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+}
+
+.rdp-cell {
+  padding: 0;
+  text-align: center;
+}
+
+.rdp-day {
+  width: var(--rdp-cell-size);
+  height: var(--rdp-cell-size);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.875rem;
+  color: hsl(var(--foreground));
+  cursor: pointer;
+}
+
+.rdp-day:hover {
+  background-color: hsl(var(--accent));
+}
+
+.rdp-day_selected {
+  background-color: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+}
+
+.rdp-day_selected:hover {
+  background-color: hsl(var(--primary));
+}
+
+.rdp-day_today {
+  background-color: hsl(var(--accent));
+  color: hsl(var(--accent-foreground));
+  font-weight: bold;
+}
+
+.rdp-day_outside {
+  opacity: 0.5;
+}
+
+.rdp-day_disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.rdp-nav {
+  display: flex;
+}
+
+.rdp-nav_button {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  background-color: transparent;
+  color: hsl(var(--foreground));
+}
+
+.rdp-nav_button:hover {
+  background-color: hsl(var(--accent));
+}

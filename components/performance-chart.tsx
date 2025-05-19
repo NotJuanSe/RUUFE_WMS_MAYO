@@ -2,30 +2,64 @@
 
 import { useEffect, useState } from "react"
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts"
+import { getChartData } from "@/lib/actions"
+import { Loader2 } from "lucide-react"
+import { useSearchParams } from "next/navigation"
 
-// Datos de ejemplo para el gráfico
-const demoData = [
-  { fecha: "01/05", tiempoPromedio: 25, ordenesCompletadas: 3 },
-  { fecha: "02/05", tiempoPromedio: 18, ordenesCompletadas: 5 },
-  { fecha: "03/05", tiempoPromedio: 30, ordenesCompletadas: 2 },
-  { fecha: "04/05", tiempoPromedio: 22, ordenesCompletadas: 4 },
-  { fecha: "05/05", tiempoPromedio: 15, ordenesCompletadas: 7 },
-  { fecha: "06/05", tiempoPromedio: 20, ordenesCompletadas: 3 },
-  { fecha: "07/05", tiempoPromedio: 28, ordenesCompletadas: 2 },
-]
+// Tipo para los datos del gráfico
+type ChartData = {
+  fecha: string
+  tiempoPromedio: number
+  ordenesCompletadas: number
+}
 
 export function PerformanceChart() {
-  const [chartData, setChartData] = useState(demoData)
+  const searchParams = useSearchParams()
+  const [chartData, setChartData] = useState<ChartData[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    // Aquí se cargarían los datos reales desde la API
-    // Por ahora usamos los datos de ejemplo
-    setIsLoading(false)
-  }, [])
+    async function loadChartData() {
+      try {
+        setIsLoading(true)
+        const data = await getChartData()
+        setChartData(data)
+        setError(null)
+      } catch (err) {
+        console.error("Error cargando datos del gráfico:", err)
+        setError("Error al cargar los datos. Por favor, intenta de nuevo.")
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    loadChartData()
+  }, [searchParams])
 
   if (isLoading) {
-    return <div className="flex justify-center items-center h-full">Cargando datos...</div>
+    return (
+      <div className="flex justify-center items-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin text-gray-500" />
+        <span className="ml-2">Cargando datos del gráfico...</span>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="flex justify-center items-center h-64 text-red-500">
+        <p>{error}</p>
+      </div>
+    )
+  }
+
+  if (chartData.length === 0) {
+    return (
+      <div className="flex justify-center items-center h-64 text-gray-500">
+        <p>No hay suficientes datos para mostrar el gráfico</p>
+      </div>
+    )
   }
 
   return (

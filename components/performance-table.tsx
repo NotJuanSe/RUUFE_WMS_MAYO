@@ -1,73 +1,58 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Search } from "lucide-react"
+import { Search, Loader2, ArrowUpDown } from "lucide-react"
+import { getFilteredPerformanceData } from "@/lib/actions"
+import { useSearchParams } from "next/navigation"
 
-// Datos de ejemplo para la tabla
-const demoData = [
-  {
-    id: "1",
-    invoiceNumber: "F-1234",
-    clientName: "Distribuidora XYZ",
-    startTime: "2023-05-01T10:30:00",
-    endTime: "2023-05-01T11:15:00",
-    duration: 45,
-    itemsCount: 15,
-    pickedItems: 15,
-    itemsPerMinute: 0.33,
-  },
-  {
-    id: "2",
-    invoiceNumber: "F-1235",
-    clientName: "Comercial ABC",
-    startTime: "2023-05-02T14:15:00",
-    endTime: "2023-05-02T14:45:00",
-    duration: 30,
-    itemsCount: 8,
-    pickedItems: 8,
-    itemsPerMinute: 0.27,
-  },
-  {
-    id: "3",
-    invoiceNumber: "F-1236",
-    clientName: "Tienda 123",
-    startTime: "2023-05-03T09:45:00",
-    endTime: "2023-05-03T10:30:00",
-    duration: 45,
-    itemsCount: 20,
-    pickedItems: 20,
-    itemsPerMinute: 0.44,
-  },
-  {
-    id: "4",
-    invoiceNumber: "F-1237",
-    clientName: "Mayorista El Sol",
-    startTime: "2023-05-04T11:00:00",
-    endTime: "2023-05-04T11:20:00",
-    duration: 20,
-    itemsCount: 5,
-    pickedItems: 5,
-    itemsPerMinute: 0.25,
-  },
-  {
-    id: "5",
-    invoiceNumber: "F-1238",
-    clientName: "Distribuidora Luna",
-    startTime: "2023-05-05T15:30:00",
-    endTime: "2023-05-05T16:15:00",
-    duration: 45,
-    itemsCount: 18,
-    pickedItems: 18,
-    itemsPerMinute: 0.4,
-  },
-]
+// Definir el tipo para los datos de rendimiento
+type PerformanceData = {
+  id: string
+  invoiceNumber: string
+  clientName: string
+  startTime: string
+  endTime: string
+  duration: number
+  itemsCount: number
+  pickedItems: number
+  itemsPerMinute: number
+}
 
 export function PerformanceTable() {
+  const searchParams = useSearchParams()
   const [searchTerm, setSearchTerm] = useState("")
-  const [orders] = useState(demoData)
+  const [orders, setOrders] = useState<PerformanceData[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [sortField, setSortField] = useState<keyof PerformanceData>("endTime")
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc")
+
+  useEffect(() => {
+    async function loadPerformanceData() {
+      try {
+        setLoading(true)
+
+        // Obtener parámetros de la URL
+        const startDate = searchParams.get("startDate") || undefined
+        const endDate = searchParams.get("endDate") || undefined
+        const clientName = searchParams.get("client") || undefined
+
+        const data = await getFilteredPerformanceData(startDate, endDate, clientName)
+        setOrders(data)
+        setError(null)
+      } catch (err) {
+        console.error("Error cargando datos de rendimiento:", err)
+        setError("Error al cargar los datos. Por favor, intenta de nuevo.")
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadPerformanceData()
+  }, [searchParams])
 
   // Función para formatear la fecha
   const formatDate = (dateString: string) => {
@@ -81,48 +66,140 @@ export function PerformanceTable() {
     })
   }
 
-  // Filtrar órdenes según el término de búsqueda
-  const filteredOrders = orders.filter(
-    (order) =>
-      order.invoiceNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      order.clientName.toLowerCase().includes(searchTerm.toLowerCase()),
-  )
+  // Función para ordenar los datos
+  const handleSort = (field: keyof PerformanceData) => {
+    if (field === sortField) {
+      setSortDirection(sortDirection === "asc" ? "desc" : "asc")
+    } else {
+      setSortField(field)
+      setSortDirection("asc")
+    }
+  }
+
+  // Ordenar y filtrar órdenes
+  const sortedAndFilteredOrders = [...orders]
+    .filter(
+      (order) =>
+        order.invoiceNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        order.clientName.toLowerCase().includes(searchTerm.toLowerCase()),
+    )
+    .sort((a, b) => {
+      const valueA = a[sortField]
+      const valueB = b[sortField]
+
+      if (typeof valueA === "number" && typeof valueB === "number") {
+        return sortDirection === "asc" ? valueA - valueB : valueB - valueA
+      }
+
+      if (typeof valueA === "string" && typeof valueB === "string") {
+        return sortDirection === "asc" ? valueA.localeCompare(valueB) : valueB.localeCompare(valueA)
+      }
+
+      return 0
+    })
+
+  // Renderizar estado de carga
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin text-gray-500" />
+        <span className="ml-2">Cargando datos de rendimiento...</span>
+      </div>
+    )
+  }
+
+  // Renderizar mensaje de error
+  if (error) {
+    return (
+      <div className="flex justify-center items-center h-64 text-red-500">
+        <p>{error}</p>
+        <Button variant="outline" className="ml-4" onClick={() => window.location.reload()}>
+          Reintentar
+        </Button>
+      </div>
+    )
+  }
+
+  // Calcular estadísticas generales
+  const totalOrders = sortedAndFilteredOrders.length
+  const totalItems = sortedAndFilteredOrders.reduce((sum, order) => sum + order.itemsCount, 0)
+  const totalDuration = sortedAndFilteredOrders.reduce((sum, order) => sum + order.duration, 0)
+  const averageEfficiency =
+    totalOrders > 0 ? sortedAndFilteredOrders.reduce((sum, order) => sum + order.itemsPerMinute, 0) / totalOrders : 0
 
   return (
     <>
-      <div className="flex items-center space-x-2 mb-4">
-        <Search className="h-4 w-4 text-gray-500" />
-        <Input
-          placeholder="Buscar por factura o cliente..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="w-80"
-        />
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+        <div className="flex items-center space-x-2">
+          <Search className="h-4 w-4 text-gray-500" />
+          <Input
+            placeholder="Buscar por factura o cliente..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-80"
+          />
+        </div>
+
+        <div className="flex flex-wrap gap-3 text-sm">
+          <div className="bg-blue-50 text-blue-700 px-3 py-1 rounded-md">
+            <span className="font-semibold">{totalOrders}</span> órdenes
+          </div>
+          <div className="bg-green-50 text-green-700 px-3 py-1 rounded-md">
+            <span className="font-semibold">{totalItems}</span> productos
+          </div>
+          <div className="bg-purple-50 text-purple-700 px-3 py-1 rounded-md">
+            <span className="font-semibold">{totalDuration}</span> minutos
+          </div>
+          <div className="bg-amber-50 text-amber-700 px-3 py-1 rounded-md">
+            <span className="font-semibold">{averageEfficiency.toFixed(2)}</span> prod/min
+          </div>
+        </div>
       </div>
 
       <div className="border rounded-md">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Factura</TableHead>
-              <TableHead>Cliente</TableHead>
-              <TableHead>Inicio</TableHead>
-              <TableHead>Fin</TableHead>
-              <TableHead>Duración (min)</TableHead>
-              <TableHead>Productos</TableHead>
-              <TableHead>Eficiencia (prod/min)</TableHead>
+              <TableHead className="cursor-pointer" onClick={() => handleSort("invoiceNumber")}>
+                Factura
+                {sortField === "invoiceNumber" && <ArrowUpDown className="ml-1 h-4 w-4 inline" />}
+              </TableHead>
+              <TableHead className="cursor-pointer" onClick={() => handleSort("clientName")}>
+                Cliente
+                {sortField === "clientName" && <ArrowUpDown className="ml-1 h-4 w-4 inline" />}
+              </TableHead>
+              <TableHead className="cursor-pointer" onClick={() => handleSort("startTime")}>
+                Inicio
+                {sortField === "startTime" && <ArrowUpDown className="ml-1 h-4 w-4 inline" />}
+              </TableHead>
+              <TableHead className="cursor-pointer" onClick={() => handleSort("endTime")}>
+                Fin
+                {sortField === "endTime" && <ArrowUpDown className="ml-1 h-4 w-4 inline" />}
+              </TableHead>
+              <TableHead className="cursor-pointer" onClick={() => handleSort("duration")}>
+                Duración (min)
+                {sortField === "duration" && <ArrowUpDown className="ml-1 h-4 w-4 inline" />}
+              </TableHead>
+              <TableHead className="cursor-pointer" onClick={() => handleSort("itemsCount")}>
+                Productos
+                {sortField === "itemsCount" && <ArrowUpDown className="ml-1 h-4 w-4 inline" />}
+              </TableHead>
+              <TableHead className="cursor-pointer" onClick={() => handleSort("itemsPerMinute")}>
+                Eficiencia (prod/min)
+                {sortField === "itemsPerMinute" && <ArrowUpDown className="ml-1 h-4 w-4 inline" />}
+              </TableHead>
               <TableHead className="text-right">Acciones</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filteredOrders.length === 0 ? (
+            {sortedAndFilteredOrders.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={8} className="text-center py-4">
-                  No se encontraron órdenes
+                  {orders.length === 0 ? "No hay órdenes completadas disponibles" : "No se encontraron órdenes"}
                 </TableCell>
               </TableRow>
             ) : (
-              filteredOrders.map((order) => (
+              sortedAndFilteredOrders.map((order) => (
                 <TableRow key={order.id}>
                   <TableCell className="font-medium">{order.invoiceNumber}</TableCell>
                   <TableCell>{order.clientName}</TableCell>
@@ -132,7 +209,19 @@ export function PerformanceTable() {
                   <TableCell>
                     {order.pickedItems} / {order.itemsCount}
                   </TableCell>
-                  <TableCell>{order.itemsPerMinute.toFixed(2)}</TableCell>
+                  <TableCell>
+                    <span
+                      className={`font-medium ${
+                        order.itemsPerMinute > 0.4
+                          ? "text-green-600"
+                          : order.itemsPerMinute > 0.25
+                            ? "text-amber-600"
+                            : "text-red-600"
+                      }`}
+                    >
+                      {order.itemsPerMinute.toFixed(2)}
+                    </span>
+                  </TableCell>
                   <TableCell className="text-right">
                     <Button variant="outline" size="sm">
                       Ver Detalles

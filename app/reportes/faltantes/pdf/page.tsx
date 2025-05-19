@@ -176,8 +176,8 @@ export default function PurchaseOrderPDF() {
               <thead>
                 <tr className="bg-gray-100">
                   <th className="border p-2 text-left">Código</th>
-                  <th className="border p-2 text-left">Producto</th>
                   <th className="border p-2 text-left">Código de Barras</th>
+                  <th className="border p-2 text-left">Producto</th>
                   <th className="border p-2 text-right">Cantidad</th>
                   <th className="border p-2 text-right">Precio Unit.</th>
                   <th className="border p-2 text-right">Total</th>
@@ -187,8 +187,8 @@ export default function PurchaseOrderPDF() {
                 {items.map((item) => (
                   <tr key={item.id}>
                     <td className="border p-2">{item.code || "—"}</td>
-                    <td className="border p-2">{item.product || "—"}</td>
                     <td className="border p-2">{item.barcode || "—"}</td>
+                    <td className="border p-2">{item.product || "—"}</td>
                     <td className="border p-2 text-right">{item.quantity}</td>
                     <td className="border p-2 text-right">{item.price ? formatCurrency(item.price) : "—"}</td>
                     <td className="border p-2 text-right">
@@ -211,7 +211,7 @@ export default function PurchaseOrderPDF() {
 
         {/* Total general */}
         <div className="mt-8 text-right">
-          <p className="text-xl font-bold">Total General: {formatCurrency(totalValue)}</p>
+          <p className="text-xl font-bold">Precio Total Aproximado: {formatCurrency(totalValue)}</p>
         </div>
 
         {/* Firmas */}

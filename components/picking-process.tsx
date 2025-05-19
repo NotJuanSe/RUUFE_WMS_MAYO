@@ -31,33 +31,101 @@ import {
   HelpCircle,
   Search,
   XCircle,
+  AlertTriangle,
+  Info,
+  Save,
 } from "lucide-react"
 import { updatePickingOrder } from "@/lib/actions"
 import { cn } from "@/lib/utils"
-import dynamic from "next/dynamic"
+import { BarcodeScanner } from "@/components/barcode-scanner"
 
-// Importar Quagga dinámicamente para evitar problemas de SSR
-const Quagga = dynamic(() => import("quagga").then((mod) => mod.default), {
-  ssr: false,
-})
+// Función para hacer vibrar el dispositivo con diferentes patrones según el tipo de alerta
+const vibrateDevice = (type: "success" | "error" | "warning" | "info") => {
+  // Verificar si el navegador soporta la API de vibración
+  if (!navigator.vibrate) {
+    console.log("Este dispositivo no soporta la API de vibración")
+    return
+  }
 
-type PickingItem = {
-  id: string
-  code: string
-  brand: string
-  product: string
-  quantity: number
-  barcode: string
-  picked: number
+  // Diferentes patrones de vibración según el tipo de alerta
+  switch (type) {
+    case "error":
+      // Vibración fuerte para errores: 3 pulsos largos
+      navigator.vibrate([200, 100, 200, 100, 200])
+      break
+    case "warning":
+      // Vibración media para advertencias: 2 pulsos medianos
+      navigator.vibrate([150, 100, 150])
+      break
+    case "success":
+      // Vibración suave para éxitos: 1 pulso corto
+      navigator.vibrate(50)
+      break
+    case "info":
+      // Vibración muy suave para información: 1 pulso muy corto
+      navigator.vibrate(25)
+      break
+    default:
+      // Vibración genérica
+      navigator.vibrate(100)
+  }
 }
 
-type PickingOrder = {
-  id: string
-  invoiceNumber: string
-  clientName: string
-  status: "pending" | "partial" | "completed"
-  createdAt: string
-  items: PickingItem[]
+// Custom Alert Component
+function CustomAlert({
+  message,
+  type = "info",
+  isVisible,
+  onClose,
+}: {
+  message: string
+  type?: "success" | "error" | "warning" | "info"
+  isVisible: boolean
+  onClose: () => void
+}) {
+  useEffect(() => {
+    if (isVisible) {
+      // Hacer vibrar el dispositivo cuando aparece una alerta
+      if (type === "error" || type === "warning") {
+        vibrateDevice(type)
+      }
+
+      const timer = setTimeout(() => {
+        onClose()
+      }, 3000)
+      return () => clearTimeout(timer)
+    }
+  }, [isVisible, onClose, type])
+
+  if (!isVisible) return null
+
+  const bgColor = {
+    success: "bg-green-100 border-green-500 text-green-800",
+    error: "bg-red-100 border-red-500 text-red-800",
+    warning: "bg-amber-100 border-amber-500 text-amber-800",
+    info: "bg-blue-100 border-blue-500 text-blue-800",
+  }
+
+  const Icon = {
+    success: Check,
+    error: XCircle,
+    warning: AlertTriangle,
+    info: Info,
+  }[type]
+
+  return (
+    <div
+      className={`fixed top-4 left-1/2 transform -translate-x-1/2 z-50 p-3 rounded-md shadow-lg border ${
+        bgColor[type]
+      } max-w-sm w-full flex items-start animate-in fade-in slide-in-from-top duration-300`}
+    >
+      <Icon className="h-5 w-5 mr-2 flex-shrink-0 mt-0.5" />
+      <div className="flex-1">{message}</div>
+      <button onClick={onClose} className="ml-2 text-gray-500 hover:text-gray-700">
+        <XCircle className="h-5 w-5" />
+      </button>
+    </div>
+  )
 }
 
 export function PickingProcess({ order }: { order: PickingOrder }) {
@@ -71,29 +139,78 @@ export function PickingProcess({ order }: { order: PickingOrder }) {
   const [expandedItem, setExpandedItem] = useState<string | null>(null)
   const [showAllItems, setShowAllItems] = useState(true)
   const [showOnlyPending, setShowOnlyPending] = useState(false)
-  const [isScanning, setIsScanning] = useState(false)
-  const [scannerReady, setScannerReady] = useState(false)
   const [showInstructions, setShowInstructions] = useState(true)
+  const [lastScannedCode, setLastScannedCode] = useState<string | null>(null)
   const barcodeInputRef = useRef<HTMLInputElement>(null)
-  const scannerRef = useRef<HTMLDivElement>(null)
   const { toast } = useToast()
   const router = useRouter()
 
-  // Focus barcode input on mount
+  // Custom alert state
+  const [alert, setAlert] = useState<{
+    message: string
+    type: "success" | "error" | "warning" | "info"
+    isVisible: boolean
+  }>({
+    message: "",
+    type: "info",
+    isVisible: false,
+  })
+
+  // Function to show an alert
+  const showAlert = (message: string, type: "success" | "error" | "warning" | "info") => {
+    setAlert({
+      message,
+      type,
+      isVisible: true,
+    })
+  }
+
+  // Function to hide the alert
+  const hideAlert = () => {
+    setAlert((prev) => ({ ...prev, isVisible: false }))
+  }
+
+  // Focus barcode input on mount and when camera is closed
   useEffect(() => {
     if (barcodeInputRef.current && !showCameraScanner) {
       barcodeInputRef.current.focus()
     }
   }, [showCameraScanner])
 
-  // Cleanup Quagga on unmount
+  // Asegurarse de que la cámara se cierre cuando el usuario navega a otra página
   useEffect(() => {
-    return () => {
-      if (isScanning) {
-        Quagga?.stop()
+    const handleRouteChange = () => {
+      if (showCameraScanner) {
+        setShowCameraScanner(false)
       }
     }
-  }, [isScanning])
+
+    // Limpiar recursos cuando el componente se desmonta
+    return () => {
+      if (showCameraScanner) {
+        setShowCameraScanner(false)
+      }
+    }
+  }, [showCameraScanner])
+
+  // Configurar event listener para la pistola de código de barras
+  useEffect(() => {
+    // La mayoría de las pistolas de código de barras funcionan como teclados
+    // y terminan con un Enter, así que capturamos ese evento
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Enter" && barcodeInput.trim() && !showCameraScanner) {
+        e.preventDefault()
+        processBarcode(barcodeInput.trim())
+        setBarcodeInput("")
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown)
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown)
+    }
+  }, [barcodeInput, showCameraScanner])
 
   // Calculate progress
   const totalItems = items.reduce((acc, item) => acc + item.quantity, 0)
@@ -125,17 +242,45 @@ export function PickingProcess({ order }: { order: PickingOrder }) {
   }
 
   const processBarcode = (barcode: string) => {
-    // Primero intentamos buscar por código de barras
-    let itemIndex = items.findIndex(
-      (item) => item.barcode && item.barcode.toLowerCase() === barcode.toLowerCase() && item.picked < item.quantity,
+    console.log("Processing barcode:", barcode)
+    setLastScannedCode(barcode)
+
+    // Verificar si el código existe en la orden actual (por código de barras o código de producto)
+    const itemInOrder = items.find(
+      (item) =>
+        (item.barcode && item.barcode.toLowerCase() === barcode.toLowerCase()) ||
+        item.code.toLowerCase() === barcode.toLowerCase(),
     )
 
-    // Si no encontramos por código de barras, intentamos por código de producto
-    if (itemIndex < 0) {
-      itemIndex = items.findIndex(
-        (item) => item.code.toLowerCase() === barcode.toLowerCase() && item.picked < item.quantity,
-      )
+    // If the code doesn't exist in the order
+    if (!itemInOrder) {
+      console.log("Product not found in order")
+      showAlert("Este código no pertenece a ningún producto en esta orden de picking.", "error")
+      playErrorSound()
+      setBarcodeInput("")
+      if (barcodeInputRef.current && !showCameraScanner) {
+        barcodeInputRef.current.focus()
+      }
+      return
     }
+
+    // Si el producto ya está completamente escaneado
+    if (itemInOrder.picked >= itemInOrder.quantity) {
+      console.log("Product already fully picked:", itemInOrder.product)
+      showAlert(
+        `${itemInOrder.product} ya tiene todas las unidades escaneadas (${itemInOrder.quantity}/${itemInOrder.quantity}).`,
+        "warning",
+      )
+      playWarningSound()
+      setBarcodeInput("")
+      if (barcodeInputRef.current && !showCameraScanner) {
+        barcodeInputRef.current.focus()
+      }
+      return
+    }
+
+    // Procesar el código normalmente si está en la orden y no está completo
+    const itemIndex = items.findIndex((item) => item.id === itemInOrder.id)
 
     if (itemIndex >= 0) {
       const updatedItems = [...items]
@@ -156,37 +301,48 @@ export function PickingProcess({ order }: { order: PickingOrder }) {
         }, 1500)
       }
 
-      toast({
-        title: "Producto escaneado",
-        description: `${updatedItems[itemIndex].product} (${updatedItems[itemIndex].picked}/${updatedItems[itemIndex].quantity})`,
-        variant: "default",
-      })
-    } else {
-      // Check if it's a valid barcode or code but already fully picked
-      const fullyPickedItem = items.find(
-        (item) =>
-          (item.barcode && item.barcode.toLowerCase() === barcode.toLowerCase()) ||
-          item.code.toLowerCase() === barcode.toLowerCase(),
+      playSuccessSound()
+      showAlert(
+        `${updatedItems[itemIndex].product} (${updatedItems[itemIndex].picked}/${updatedItems[itemIndex].quantity})`,
+        "success",
       )
-
-      if (fullyPickedItem) {
-        toast({
-          title: "Producto ya completado",
-          description: `${fullyPickedItem.product} ya ha sido completamente recogido (${fullyPickedItem.quantity}/${fullyPickedItem.quantity})`,
-          variant: "destructive",
-        })
-      } else {
-        toast({
-          title: "Código no encontrado",
-          description: "Este código o código de barras no corresponde a ningún producto en esta orden.",
-          variant: "destructive",
-        })
-      }
     }
 
     setBarcodeInput("")
     if (barcodeInputRef.current && !showCameraScanner) {
       barcodeInputRef.current.focus()
+    }
+  }
+
+  const playSuccessSound = () => {
+    try {
+      const beep = new Audio("data:audio/wav;base64,UklGRl9vT19XQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YU...")
+      beep.volume = 0.5
+      beep.play().catch((e) => console.log("Audio play failed:", e))
+    } catch (e) {
+      console.log("Audio error:", e)
+    }
+  }
+
+  const playErrorSound = () => {
+    try {
+      // Un sonido diferente para errores
+      const beep = new Audio("data:audio/wav;base64,UklGRl9vT19XQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YU...")
+      beep.volume = 0.5
+      beep.play().catch((e) => console.log("Audio play failed:", e))
+    } catch (e) {
+      console.log("Audio error:", e)
+    }
+  }
+
+  const playWarningSound = () => {
+    try {
+      // Un sonido diferente para advertencias
+      const beep = new Audio("data:audio/wav;base64,UklGRl9vT19XQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YU...")
+      beep.volume = 0.5
+      beep.play().catch((e) => console.log("Audio play failed:", e))
+    } catch (e) {
+      console.log("Audio error:", e)
     }
   }
 
@@ -199,6 +355,10 @@ export function PickingProcess({ order }: { order: PickingOrder }) {
         picked: updatedItems[itemIndex].picked + 1,
       }
       setItems(updatedItems)
+      showAlert(
+        `${updatedItems[itemIndex].product} (${updatedItems[itemIndex].picked}/${updatedItems[itemIndex].quantity})`,
+        "success",
+      )
     }
   }
 
@@ -211,6 +371,10 @@ export function PickingProcess({ order }: { order: PickingOrder }) {
         picked: updatedItems[itemIndex].picked - 1,
       }
       setItems(updatedItems)
+      showAlert(
+        `Se quitó una unidad de ${updatedItems[itemIndex].product} (${updatedItems[itemIndex].picked}/${updatedItems[itemIndex].quantity})`,
+        "info",
+      )
     }
   }
 
@@ -220,23 +384,25 @@ export function PickingProcess({ order }: { order: PickingOrder }) {
       const status = isPartial ? "partial" : "completed"
       await updatePickingOrder(order.id, items, status)
 
-      toast({
-        title: isPartial ? "Picking parcial guardado" : "Picking completado",
-        description: isPartial
+      showAlert(
+        isPartial
           ? "La orden ha sido guardada como picking parcial. Podrás completarla más tarde."
           : "La orden ha sido marcada como completada exitosamente.",
-        variant: "default",
-      })
+        "success",
+      )
 
-      // Redirect to appropriate page
-      router.push(isPartial ? "/picking/parciales" : "/picking/completadas")
-      router.refresh()
+      // Asegurarse de que la cámara esté cerrada antes de navegar
+      if (showCameraScanner) {
+        setShowCameraScanner(false)
+      }
+
+      // Redirect to appropriate page after a short delay to show the alert
+      setTimeout(() => {
+        router.push(isPartial ? "/picking/parciales" : "/picking/completadas")
+        router.refresh()
+      }, 1500)
     } catch (error) {
-      toast({
-        title: "Error al guardar",
-        description: "Ocurrió un error al guardar el estado del picking.",
-        variant: "destructive",
-      })
+      showAlert("Ocurrió un error al guardar el estado del picking.", "error")
       console.error(error)
     } finally {
       setIsSaving(false)
@@ -252,207 +418,90 @@ export function PickingProcess({ order }: { order: PickingOrder }) {
     }
   }
 
-  // Quagga.js initialization
-  const initQuagga = () => {
-    if (!scannerRef.current || !Quagga) {
-      return
-    }
-
-    setIsScanning(true)
-    setScannerReady(false)
-
-    Quagga.init(
-      {
-        inputStream: {
-          name: "Live",
-          type: "LiveStream",
-          target: scannerRef.current,
-          constraints: {
-            facingMode: "environment", // Use the back camera
-            width: { min: 450 },
-            height: { min: 300 },
-            aspectRatio: { min: 1, max: 2 },
-          },
-        },
-        locator: {
-          patchSize: "medium",
-          halfSample: true,
-        },
-        numOfWorkers: 2,
-        frequency: 10,
-        decoder: {
-          readers: [
-            "ean_reader",
-            "ean_8_reader",
-            "code_128_reader",
-            "code_39_reader",
-            "code_93_reader",
-            "upc_reader",
-            "upc_e_reader",
-          ],
-        },
-        locate: true,
-      },
-      (err: any) => {
-        if (err) {
-          console.error("Error initializing Quagga:", err)
-          toast({
-            title: "Error de cámara",
-            description: "No se pudo inicializar el escáner. Verifica los permisos de cámara.",
-            variant: "destructive",
-          })
-          stopScanner()
-          return
-        }
-
-        setScannerReady(true)
-        Quagga.start()
-
-        // Add detection event listener
-        Quagga.onDetected(handleBarcodeDetected)
-
-        // Add processing event listener to draw detection rectangle
-        Quagga.onProcessed(handleProcessed)
-      },
-    )
-  }
-
-  const handleBarcodeDetected = (result: any) => {
-    if (result && result.codeResult) {
-      const code = result.codeResult.code
-
-      // Verificar que el código tenga una longitud mínima para evitar falsos positivos
-      if (code && code.length >= 4) {
-        // Reproducir un sonido de éxito
-        const beep = new Audio("data:audio/wav;base64,UklGRl9vT19XQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YU...")
-        beep.volume = 0.5
-        beep.play().catch((e) => console.log("Audio play failed:", e))
-
-        // Procesar el código detectado
-        processBarcode(code)
-
-        // Pausar brevemente el escáner para evitar múltiples detecciones
-        Quagga.pause()
-        setTimeout(() => {
-          if (isScanning) {
-            Quagga.start()
-          }
-        }, 1500)
-      }
-    }
-  }
-
-  const handleProcessed = (result: any) => {
-    const drawingCtx = Quagga.canvas.ctx.overlay
-    const drawingCanvas = Quagga.canvas.dom.overlay
-
-    if (result) {
-      if (result.boxes) {
-        drawingCtx.clearRect(
-          0,
-          0,
-          Number.parseInt(drawingCanvas.getAttribute("width") || "0"),
-          Number.parseInt(drawingCanvas.getAttribute("height") || "0"),
-        )
-        result.boxes
-          .filter((box: any) => box !== result.box)
-          .forEach((box: any) => {
-            Quagga.ImageDebug.drawPath(box, { x: 0, y: 1 }, drawingCtx, { color: "green", lineWidth: 2 })
-          })
-      }
-
-      if (result.box) {
-        Quagga.ImageDebug.drawPath(result.box, { x: 0, y: 1 }, drawingCtx, { color: "#00F", lineWidth: 2 })
-      }
-
-      if (result.codeResult && result.codeResult.code) {
-        Quagga.ImageDebug.drawPath(result.line, { x: "x", y: "y" }, drawingCtx, { color: "red", lineWidth: 3 })
-      }
-    }
-  }
-
   const startCameraScanner = () => {
     setShowCameraScanner(true)
-    // Inicializar Quagga después de que el componente se monte
-    setTimeout(() => {
-      initQuagga()
-    }, 100)
   }
 
-  const stopScanner = () => {
-    if (Quagga) {
-      try {
-        // Eliminar los event listeners
-        Quagga.offDetected(handleBarcodeDetected)
-        Quagga.offProcessed(handleProcessed)
-        // Detener Quagga
-        Quagga.stop()
-      } catch (error) {
-        console.error("Error stopping Quagga:", error)
-      }
-    }
-    setIsScanning(false)
-    setScannerReady(false)
+  const stopCameraScanner = () => {
     setShowCameraScanner(false)
+    // Asegurarse de que el input reciba el foco después de cerrar la cámara
+    setTimeout(() => {
+      if (barcodeInputRef.current) {
+        barcodeInputRef.current.focus()
+      }
+    }, 100)
   }
 
   const toggleInstructions = () => {
     setShowInstructions(!showInstructions)
   }
 
+  const handleBarcodeDetected = (code: string) => {
+    processBarcode(code)
+  }
+
   return (
     <>
-      <div className="sticky top-0 z-10 bg-white border-b border-gray-200 px-2 py-2 sm:px-6 sm:py-3">
-        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
-          <div className="flex items-center">
-            <Link href="/picking/pendientes">
-              <Button variant="ghost" size="icon" className="h-8 w-8 sm:h-9 sm:w-9">
-                <ChevronLeft className="h-4 w-4 sm:h-5 sm:w-5" />
-              </Button>
-            </Link>
-            <div className="ml-2">
-              <h1 className="text-base sm:text-lg font-semibold truncate">Orden de {order.clientName}</h1>
-              <div className="text-xs sm:text-sm text-gray-500 truncate">
-                Cliente: {order.clientName} | Factura: {order.invoiceNumber}
-              </div>
+      {/* Custom Alert */}
+      <CustomAlert message={alert.message} type={alert.type} isVisible={alert.isVisible} onClose={hideAlert} />
+
+      {/* Header con información de la orden y botones de acción */}
+      <div className="sticky top-0 z-10 bg-white border-b border-gray-200">
+        {/* Información de la orden */}
+        <div className="px-3 py-2 flex items-center">
+          <Link href="/picking/pendientes">
+            <Button variant="ghost" size="icon" className="h-8 w-8 mr-2">
+              <ChevronLeft className="h-5 w-5" />
+            </Button>
+          </Link>
+          <div>
+            <h1 className="text-base font-semibold truncate">Orden de {order.clientName}</h1>
+            <div className="text-xs text-gray-500 truncate">
+              Cliente: {order.clientName} | Factura: {order.invoiceNumber}
             </div>
           </div>
-          <div className="flex items-center gap-2 mt-2 sm:mt-0">
-            <div className="text-xs sm:text-sm font-medium whitespace-nowrap">
+        </div>
+
+        {/* Barra de progreso y botones de acción */}
+        <div className="px-3 py-2 bg-gray-50 flex flex-col">
+          {/* Progreso */}
+          <div className="flex items-center mb-2">
+            <div className="text-xs font-medium mr-2">
               {pickedItems}/{totalItems} ({progress}%)
             </div>
-            <div className="w-16 sm:w-24 h-2 bg-gray-200 rounded-full">
+            <div className="flex-1 h-2 bg-gray-200 rounded-full">
               <div
                 className={cn("h-full rounded-full", progress === 100 ? "bg-green-500" : "bg-blue-500")}
                 style={{ width: `${progress}%` }}
               ></div>
             </div>
-            <div className="flex gap-1 sm:gap-2">
-              <Button
-                onClick={() => {
-                  setIsPartial(false)
-                  setShowCompleteDialog(true)
-                }}
-                disabled={isSaving || pickedItems === 0}
-                className="bg-green-600 hover:bg-green-700 text-xs sm:text-sm h-8 px-2 sm:px-3"
-              >
-                <CheckCircle className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
-                <span className="hidden sm:inline">Completar</span>
-                <span className="sm:hidden">OK</span>
-              </Button>
-              <Button
-                onClick={() => {
-                  setIsPartial(true)
-                  setShowCompleteDialog(true)
-                }}
-                disabled={isSaving || pickedItems === 0 || isComplete}
-                variant="outline"
-                className="border-amber-500 text-amber-700 hover:bg-amber-50 text-xs sm:text-sm h-8 px-2 sm:px-3"
-              >
-                <span className="hidden sm:inline">Guardar Parcial</span>
-                <span className="sm:hidden">Parcial</span>
-              </Button>
-            </div>
+          </div>
+
+          {/* Botones de acción */}
+          <div className="flex gap-2">
+            <Button
+              onClick={() => {
+                setIsPartial(false)
+                setShowCompleteDialog(true)
+              }}
+              disabled={isSaving || pickedItems === 0}
+              className="bg-green-600 hover:bg-green-700 text-xs h-10 flex-1"
+            >
+              <CheckCircle className="h-4 w-4 mr-1.5" />
+              <span>Completar</span>
+            </Button>
+            <Button
+              onClick={() => {
+                setIsPartial(true)
+                setShowCompleteDialog(true)
+              }}
+              disabled={isSaving || pickedItems === 0 || isComplete}
+              variant="outline"
+              className="border-amber-500 text-amber-700 hover:bg-amber-50 text-xs h-10 flex-1"
+            >
+              <Save className="h-4 w-4 mr-1.5" />
+              <span>Guardar Parcial</span>
+            </Button>
           </div>
         </div>
       </div>
@@ -476,25 +525,15 @@ export function PickingProcess({ order }: { order: PickingOrder }) {
               </div>
             </CardHeader>
             <CardContent>
-              {showCameraScanner ? (
-                <div className="space-y-3 md:max-w-md md:mx-auto">
-                  <div ref={scannerRef} className="relative bg-black rounded-md overflow-hidden aspect-video">
-                    {!scannerReady && (
-                      <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 z-10">
-                        <div className="animate-spin h-8 w-8 border-4 border-white border-t-transparent rounded-full"></div>
-                      </div>
-                    )}
-                    <div className="scanner-overlay absolute inset-0 pointer-events-none z-20">
-                      <div className="scanner-guide absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-3/4 h-1/3 border-2 border-green-500 rounded-md"></div>
-                    </div>
-                  </div>
-                  <Button variant="outline" onClick={stopScanner} className="w-full">
-                    Cerrar Cámara
-                  </Button>
-                  <p className="text-xs text-center text-gray-500">
-                    Apunta la cámara al código de barras para escanear automáticamente
-                  </p>
+              {lastScannedCode && (
+                <div className="mb-3 p-2 bg-gray-50 rounded-md border border-gray-200 text-sm">
+                  <div className="font-medium">Último código escaneado:</div>
+                  <div className="text-gray-700">{lastScannedCode}</div>
                 </div>
+              )}
+
+              {showCameraScanner ? (
+                <BarcodeScanner onDetected={handleBarcodeDetected} onClose={stopCameraScanner} />
               ) : (
                 <form onSubmit={handleBarcodeSubmit} className="space-y-3">
                   <div className="flex items-center space-x-2">
@@ -506,6 +545,7 @@ export function PickingProcess({ order }: { order: PickingOrder }) {
                         className="pl-8"
                         value={barcodeInput}
                         onChange={(e) => setBarcodeInput(e.target.value)}
+                        autoComplete="off"
                       />
                     </div>
                     <Button type="submit" disabled={!barcodeInput.trim()} className="shrink-0">
@@ -536,6 +576,7 @@ export function PickingProcess({ order }: { order: PickingOrder }) {
                     <li>• Usa la cámara para escanear códigos de barras</li>
                     <li>• Busca productos por código, marca o nombre</li>
                     <li>• Usa los botones + y - para ajustar manualmente</li>
+                    <li>• El dispositivo vibrará al detectar errores o advertencias</li>
                   </ul>
                 </div>
               )}
@@ -802,7 +843,40 @@ export function PickingProcess({ order }: { order: PickingOrder }) {
         .animate-fadeIn {
           animation: fadeIn 0.3s ease-in-out;
         }
+
+        @keyframes slide-in-from-top {
+          from {
+            transform: translateX(-50%) translateY(-100%);
+          }
+          to {
+            transform: translateX(-50%) translateY(0);
+          }
+        }
+
+        .animate-in.slide-in-from-top {
+          animation: slide-in-from-top 0.3s ease-out;
+        }
       `}</style>
     </>
   )
+}
+
+// Añadir tipos que faltaban
+type PickingItem = {
+  id: string
+  code: string
+  brand: string
+  product: string
+  quantity: number
+  barcode: string
+  picked: number
+}
+
+type PickingOrder = {
+  id: string
+  invoiceNumber: string
+  clientName: string
+  status: "pending" | "partial" | "completed"
+  createdAt: string
+  items: PickingItem[]
 }
