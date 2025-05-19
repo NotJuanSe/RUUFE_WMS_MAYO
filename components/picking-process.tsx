@@ -20,9 +20,26 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { Barcode, Camera, Check, CheckCircle, ChevronLeft, ChevronDown, ChevronUp, Search, XCircle } from "lucide-react"
+import {
+  Barcode,
+  Camera,
+  Check,
+  CheckCircle,
+  ChevronLeft,
+  ChevronDown,
+  ChevronUp,
+  HelpCircle,
+  Search,
+  XCircle,
+} from "lucide-react"
 import { updatePickingOrder } from "@/lib/actions"
 import { cn } from "@/lib/utils"
+import dynamic from "next/dynamic"
+
+// Importar Quagga dinámicamente para evitar problemas de SSR
+const Quagga = dynamic(() => import("quagga").then((mod) => mod.default), {
+  ssr: false,
+})
 
 type PickingItem = {
   id: string
@@ -54,9 +71,11 @@ export function PickingProcess({ order }: { order: PickingOrder }) {
   const [expandedItem, setExpandedItem] = useState<string | null>(null)
   const [showAllItems, setShowAllItems] = useState(true)
   const [showOnlyPending, setShowOnlyPending] = useState(false)
+  const [isScanning, setIsScanning] = useState(false)
+  const [scannerReady, setScannerReady] = useState(false)
+  const [showInstructions, setShowInstructions] = useState(true)
   const barcodeInputRef = useRef<HTMLInputElement>(null)
-  const videoRef = useRef<HTMLVideoElement>(null)
-  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const scannerRef = useRef<HTMLDivElement>(null)
   const { toast } = useToast()
   const router = useRouter()
 
@@ -66,6 +85,15 @@ export function PickingProcess({ order }: { order: PickingOrder }) {
       barcodeInputRef.current.focus()
     }
   }, [showCameraScanner])
+
+  // Cleanup Quagga on unmount
+  useEffect(() => {
+    return () => {
+      if (isScanning) {
+        Quagga?.stop()
+      }
+    }
+  }, [isScanning])
 
   // Calculate progress
   const totalItems = items.reduce((acc, item) => acc + item.quantity, 0)
@@ -224,91 +252,152 @@ export function PickingProcess({ order }: { order: PickingOrder }) {
     }
   }
 
-  // Camera scanning functionality
-  const startCameraScanner = async () => {
-    setShowCameraScanner(true)
+  // Quagga.js initialization
+  const initQuagga = () => {
+    if (!scannerRef.current || !Quagga) {
+      return
+    }
 
-    try {
-      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "environment" },
-        })
+    setIsScanning(true)
+    setScannerReady(false)
 
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream
-          videoRef.current.play()
+    Quagga.init(
+      {
+        inputStream: {
+          name: "Live",
+          type: "LiveStream",
+          target: scannerRef.current,
+          constraints: {
+            facingMode: "environment", // Use the back camera
+            width: { min: 450 },
+            height: { min: 300 },
+            aspectRatio: { min: 1, max: 2 },
+          },
+        },
+        locator: {
+          patchSize: "medium",
+          halfSample: true,
+        },
+        numOfWorkers: 2,
+        frequency: 10,
+        decoder: {
+          readers: [
+            "ean_reader",
+            "ean_8_reader",
+            "code_128_reader",
+            "code_39_reader",
+            "code_93_reader",
+            "upc_reader",
+            "upc_e_reader",
+          ],
+        },
+        locate: true,
+      },
+      (err: any) => {
+        if (err) {
+          console.error("Error initializing Quagga:", err)
+          toast({
+            title: "Error de cámara",
+            description: "No se pudo inicializar el escáner. Verifica los permisos de cámara.",
+            variant: "destructive",
+          })
+          stopScanner()
+          return
         }
-      } else {
-        toast({
-          title: "Cámara no disponible",
-          description: "Tu dispositivo no soporta acceso a la cámara.",
-          variant: "destructive",
-        })
-        setShowCameraScanner(false)
+
+        setScannerReady(true)
+        Quagga.start()
+
+        // Add detection event listener
+        Quagga.onDetected(handleBarcodeDetected)
+
+        // Add processing event listener to draw detection rectangle
+        Quagga.onProcessed(handleProcessed)
+      },
+    )
+  }
+
+  const handleBarcodeDetected = (result: any) => {
+    if (result && result.codeResult) {
+      const code = result.codeResult.code
+
+      // Verificar que el código tenga una longitud mínima para evitar falsos positivos
+      if (code && code.length >= 4) {
+        // Reproducir un sonido de éxito
+        const beep = new Audio("data:audio/wav;base64,UklGRl9vT19XQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YU...")
+        beep.volume = 0.5
+        beep.play().catch((e) => console.log("Audio play failed:", e))
+
+        // Procesar el código detectado
+        processBarcode(code)
+
+        // Pausar brevemente el escáner para evitar múltiples detecciones
+        Quagga.pause()
+        setTimeout(() => {
+          if (isScanning) {
+            Quagga.start()
+          }
+        }, 1500)
       }
-    } catch (error) {
-      console.error("Error accessing camera:", error)
-      toast({
-        title: "Error de cámara",
-        description: "No se pudo acceder a la cámara. Verifica los permisos.",
-        variant: "destructive",
-      })
-      setShowCameraScanner(false)
     }
   }
 
-  const stopCameraScanner = () => {
-    if (videoRef.current && videoRef.current.srcObject) {
-      const stream = videoRef.current.srcObject as MediaStream
-      const tracks = stream.getTracks()
+  const handleProcessed = (result: any) => {
+    const drawingCtx = Quagga.canvas.ctx.overlay
+    const drawingCanvas = Quagga.canvas.dom.overlay
 
-      tracks.forEach((track) => track.stop())
-      videoRef.current.srcObject = null
+    if (result) {
+      if (result.boxes) {
+        drawingCtx.clearRect(
+          0,
+          0,
+          Number.parseInt(drawingCanvas.getAttribute("width") || "0"),
+          Number.parseInt(drawingCanvas.getAttribute("height") || "0"),
+        )
+        result.boxes
+          .filter((box: any) => box !== result.box)
+          .forEach((box: any) => {
+            Quagga.ImageDebug.drawPath(box, { x: 0, y: 1 }, drawingCtx, { color: "green", lineWidth: 2 })
+          })
+      }
+
+      if (result.box) {
+        Quagga.ImageDebug.drawPath(result.box, { x: 0, y: 1 }, drawingCtx, { color: "#00F", lineWidth: 2 })
+      }
+
+      if (result.codeResult && result.codeResult.code) {
+        Quagga.ImageDebug.drawPath(result.line, { x: "x", y: "y" }, drawingCtx, { color: "red", lineWidth: 3 })
+      }
     }
+  }
 
+  const startCameraScanner = () => {
+    setShowCameraScanner(true)
+    // Inicializar Quagga después de que el componente se monte
+    setTimeout(() => {
+      initQuagga()
+    }, 100)
+  }
+
+  const stopScanner = () => {
+    if (Quagga) {
+      try {
+        // Eliminar los event listeners
+        Quagga.offDetected(handleBarcodeDetected)
+        Quagga.offProcessed(handleProcessed)
+        // Detener Quagga
+        Quagga.stop()
+      } catch (error) {
+        console.error("Error stopping Quagga:", error)
+      }
+    }
+    setIsScanning(false)
+    setScannerReady(false)
     setShowCameraScanner(false)
   }
 
-  // This is a placeholder for barcode detection
-  // In a real implementation, you would use a library like quagga.js or zxing
-  const captureBarcode = () => {
-    if (videoRef.current && canvasRef.current) {
-      const video = videoRef.current
-      const canvas = canvasRef.current
-      const context = canvas.getContext("2d")
-
-      if (context) {
-        // Set canvas dimensions to match video
-        canvas.width = video.videoWidth
-        canvas.height = video.videoHeight
-
-        // Draw current video frame to canvas
-        context.drawImage(video, 0, 0, canvas.width, canvas.height)
-
-        // Here you would process the image to detect barcodes
-        // For demonstration, we'll just show a toast
-        toast({
-          title: "Procesando imagen",
-          description: "Buscando códigos de barras en la imagen...",
-        })
-
-        // Simulate finding a barcode after a delay
-        setTimeout(() => {
-          // In a real implementation, this would be the detected barcode
-          const mockDetectedBarcode = items[0]?.barcode || items[0]?.code
-
-          if (mockDetectedBarcode) {
-            processBarcode(mockDetectedBarcode)
-          } else {
-            toast({
-              title: "No se detectó código",
-              description: "Intenta nuevamente o ingresa el código manualmente.",
-              variant: "destructive",
-            })
-          }
-        }, 1000)
-      }
-    }
+  const toggleInstructions = () => {
+    setShowInstructions(!showInstructions)
   }
 
   return (
@@ -368,28 +457,43 @@ export function PickingProcess({ order }: { order: PickingOrder }) {
         </div>
       </div>
 
-      <div className="p-2 sm:p-6 grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
-        {/* Scanner section - Moved to top on mobile */}
-        <div className="lg:order-2 lg:col-span-1">
+      <div className="p-2 sm:p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+        {/* Scanner section - Positioned appropriately for all screen sizes */}
+        <div className="md:col-span-2 lg:col-span-1 lg:order-2">
           <Card>
             <CardHeader className="pb-2 sm:pb-3">
-              <CardTitle className="text-base sm:text-lg">Escanear Código</CardTitle>
+              <div className="flex justify-between items-center">
+                <CardTitle className="text-base sm:text-lg">Escanear Código</CardTitle>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={toggleInstructions}
+                  className="h-8 w-8 p-0"
+                  title={showInstructions ? "Ocultar instrucciones" : "Mostrar instrucciones"}
+                >
+                  <HelpCircle className="h-4 w-4" />
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               {showCameraScanner ? (
-                <div className="space-y-3">
-                  <div className="relative bg-black rounded-md overflow-hidden aspect-video">
-                    <video ref={videoRef} className="w-full h-full object-cover" playsInline></video>
-                    <canvas ref={canvasRef} className="hidden"></canvas>
+                <div className="space-y-3 md:max-w-md md:mx-auto">
+                  <div ref={scannerRef} className="relative bg-black rounded-md overflow-hidden aspect-video">
+                    {!scannerReady && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 z-10">
+                        <div className="animate-spin h-8 w-8 border-4 border-white border-t-transparent rounded-full"></div>
+                      </div>
+                    )}
+                    <div className="scanner-overlay absolute inset-0 pointer-events-none z-20">
+                      <div className="scanner-guide absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-3/4 h-1/3 border-2 border-green-500 rounded-md"></div>
+                    </div>
                   </div>
-                  <div className="flex gap-2">
-                    <Button onClick={captureBarcode} className="flex-1">
-                      Capturar Código
-                    </Button>
-                    <Button variant="outline" onClick={stopCameraScanner} className="flex-1">
-                      Cerrar Cámara
-                    </Button>
-                  </div>
+                  <Button variant="outline" onClick={stopScanner} className="w-full">
+                    Cerrar Cámara
+                  </Button>
+                  <p className="text-xs text-center text-gray-500">
+                    Apunta la cámara al código de barras para escanear automáticamente
+                  </p>
                 </div>
               ) : (
                 <form onSubmit={handleBarcodeSubmit} className="space-y-3">
@@ -421,21 +525,26 @@ export function PickingProcess({ order }: { order: PickingOrder }) {
                 </form>
               )}
 
-              <div className="mt-4 sm:mt-6">
-                <h3 className="text-xs sm:text-sm font-medium text-gray-700 mb-1 sm:mb-2">Instrucciones:</h3>
-                <ul className="text-xs sm:text-sm text-gray-600 space-y-1">
-                  <li>• Escanea el código de barras o ingresa el código</li>
-                  <li>• Usa la cámara para escanear códigos de barras</li>
-                  <li>• Busca productos por código, marca o nombre</li>
-                  <li>• Usa los botones + y - para ajustar manualmente</li>
-                </ul>
-              </div>
+              {/* Instrucciones colapsables */}
+              {showInstructions && (
+                <div className="mt-4 sm:mt-6 animate-fadeIn">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xs sm:text-sm font-medium text-gray-700 mb-1 sm:mb-2">Instrucciones:</h3>
+                  </div>
+                  <ul className="text-xs sm:text-sm text-gray-600 space-y-1">
+                    <li>• Escanea el código de barras o ingresa el código</li>
+                    <li>• Usa la cámara para escanear códigos de barras</li>
+                    <li>• Busca productos por código, marca o nombre</li>
+                    <li>• Usa los botones + y - para ajustar manualmente</li>
+                  </ul>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
 
         {/* Products list */}
-        <div className="lg:order-1 lg:col-span-2">
+        <div className="md:col-span-2 lg:order-1 lg:col-span-2">
           <Card>
             <CardHeader className="pb-2 sm:pb-3">
               <CardTitle className="text-base sm:text-lg">Lista de Productos</CardTitle>
@@ -677,6 +786,23 @@ export function PickingProcess({ order }: { order: PickingOrder }) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <style jsx global>{`
+        .drawingBuffer {
+          position: absolute;
+          top: 0;
+          left: 0;
+        }
+        
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        
+        .animate-fadeIn {
+          animation: fadeIn 0.3s ease-in-out;
+        }
+      `}</style>
     </>
   )
 }
