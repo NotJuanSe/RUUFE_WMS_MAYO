@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>REPORTE DE RENTABILIDAD {{ client_name }}</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            padding: 20px;
+            position: relative;
+        }
+        .watermark {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            width: 100%;
+            height: 100%;
+            background-image: url("https://cdn.shopify.com/s/files/1/2234/1321/files/Logo_Mayoristas.png?v=1745342261");
+            background-repeat: no-repeat;
+            background-position: center;
+            background-size: 50% auto;
+            opacity: 0.15;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            z-index: 0;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+        .title {
+            text-align: center;
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 20px;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+        }
+        
+        th, td {
+            border: 1px solid black;
+            padding: 8px;
+            text-align: left;
+        }
+        
+        th {
+            background-color: #f2f2f2;
+            font-weight: bold;
+        }
+        
+        .summary {
+            margin: 20px 0;
+            border: 1px solid black;
+            padding: 10px;
+            background-color: #f2f2f2;
+        }
+        
+        .summary-section {
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px dashed #999;
+        }
+        
+        .summary-section:last-child {
+            border-bottom: none;
+        }
+        
+        .summary-title {
+            font-weight: bold;
+            font-size: 16px;
+            margin-bottom: 10px;
+            text-align: center;
+        }
+        
+        .summary p {
+            margin: 5px 0;
+        }
+        
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            width: 100%;
+        }
+        
+        .logo {
+            flex: 1;
+        }
+        
+        .logo img {
+            max-width: 300px;
+            height: auto;
+        }
+        
+        .invoice-title {
+            flex: 1;
+            text-align: center;
+            font-size: 24px;
+            font-weight: bold;
+            border: 2px solid #000;
+            padding: 10px;
+            margin: 0 20px;
+        }
+        
+        .invoice-details {
+            flex: 1;
+            text-align: right;
+        }
+        
+        .invoice-details p {
+            margin: 5px 0;
+            margin-left: 10%;
+            font-weight: bold;
+            text-align: left;
+        }
+        
+        .detail-value {
+            font-weight: normal;
+            margin-left: 10px;
+        }
+        
+        .profit-positive {
+            color: green;
+            font-weight: bold;
+        }
+        
+        .profit-negative {
+            color: red;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="watermark"></div>
+    <div class="header">
+        <div class="logo">
+            <img src="https://cdn.shopify.com/s/files/1/2234/1321/files/Logo_Mayoristas.png?v=1745342261" alt="Logo Mayoristas">
+        </div>
+        <div class="invoice-title">REPORTE DE RENTABILIDAD</div>
+        <div class="invoice-details">
+            <p>Invoice No: <span class="detail-value">{{ invoice_number }}</span></p>
+            <p>Date: <span class="detail-value">{{ invoice_date }}</span></p>
+            <p>Name: <span class="detail-value">{{ client_name }}</span></p>
+            <p>Phone: <span class="detail-value">{{ client_phone }}</span></p>            
+        </div>
+    </div>
+    
+    <table>
+        <thead>
+            <tr>
+                <th>Código RUUFE</th>
+                <th>MARCAS</th>
+                <th>PRODUCTOS</th>
+                <th>CANTIDAD</th>
+                <th>COSTO COP</th>
+                <th>TOTAL COSTO COP</th>
+                <th>COSTO USD</th>
+                <th>TOTAL COSTO USD</th>
+                <th>RRP</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for producto in productos %}
+            <tr>
+                <td>{{ producto.codigo }}</td>
+                <td>{{ producto.marca }}</td>
+                <td>{{ producto.producto }}</td>
+                <td>{{ producto.cantidad|int }}</td>
+                <td>$ {{ producto.precio_cop|format_currency }}</td>
+                <td>$ {{ (producto.precio_cop * producto.cantidad)|format_currency }}</td>
+                <td>$ {{ producto.rrp|format_currency }}</td>
+                <td>$ {{ (producto.rrp * producto.cantidad)|format_currency }}</td>
+                <td>$ {{ producto.usd_cost|format_currency }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <div class="summary">
+        <div class="summary-section">
+            <div class="summary-title">PRODUCTOS</div>
+            <p>CANTIDAD DE PRODUCTOS: {{ total_productos }}</p>
+            <p>COSTO TOTAL COP: $ {{ total_costo_cop }}</p>
+            <p>COSTO TOTAL USD: $ {{ total_costo_usd }}</p>
+        </div>
+        
+        <div class="summary-section">
+            <div class="summary-title">ENVIO</div>
+            <p>COSTO ENVIO (RUUFE) COP: $ {{ costo_envio_ruufe_cop }}</p>
+            <p>COSTO ENVIO (CLIENTE) COP: $ {{ costo_envio_cliente_cop }}</p>
+            <p>COSTO ENVIO (CLIENTE) USD: $ {{ costo_envio_cliente_usd }}</p>
+            <p>CANTIDAD DE CAJAS ENVIADAS: 
+                {% for peso in pesos_cajas %}
+                    CAJA {{ loop.index }}: {{ peso|format_currency }}Kg{% if not loop.last %}, {% endif %}
+                {% endfor %}
+            </p>
+        </div>
+        
+        <div class="summary-section">
+            <div class="summary-title">RENTABILIDAD TRM DEL DIA: {{ trm }}</div>
+            <p>COSTOS TOTALES COP: $ {{ costos_totales_cop }}</p>
+            <p>PAGADO POR EL CLIENTE USD: $ {{ pagado_cliente_usd }}</p>
+            <p>TOTAL PAGADO POR EL CLIENTE CAMBIO A COP: $ {{ pagado_cliente_cop }}</p>
+            <p>UTILIDAD COP: $ <span class="{{ 'profit-positive' if utilidad_cop > 0 else 'profit-negative' }}">{{ utilidad_cop_formatted }}</span></p>
+            <p>RENTABILIDAD: <span class="{{ 'profit-positive' if porcentaje_ganancia > 0 else 'profit-negative' }}">{{ porcentaje_ganancia_formatted }}%</span></p>
+        </div>
+    </div>
+</body>
+</html>

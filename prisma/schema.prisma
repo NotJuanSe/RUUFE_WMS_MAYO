@@ -1,0 +1,68 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql" // Puedes cambiarlo a mysql, sqlite, sqlserver, mongodb, etc.
+  url      = env("DATABASE_URL")
+}
+
+model Product {
+  id          String   @id @default(cuid())
+  codigoRUUFE String   @unique
+  barcode     String?
+  producto    String
+  precioCOP   Float
+  usdCost     Float
+  rrp         Float
+  pesoGR      Float
+  marca       String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relaciones
+  pickingItems PickingItem[]
+
+  @@index([codigoRUUFE])
+  @@index([barcode])
+  @@index([marca])
+}
+
+model PickingOrder {
+  id            String       @id @default(cuid())
+  invoiceNumber String       @unique
+  clientName    String
+  status        OrderStatus  @default(pending)
+  createdAt     DateTime     @default(now())
+  completedAt   DateTime?
+  updatedAt     DateTime     @updatedAt
+  
+  // Relaciones
+  items         PickingItem[]
+
+  @@index([status])
+}
+
+model PickingItem {
+  id        String   @id @default(cuid())
+  quantity  Int
+  picked    Int      @default(0)
+  
+  // Relaciones
+  order     PickingOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderId   String
+  product   Product      @relation(fields: [productId], references: [id])
+  productId String
+
+  @@index([orderId])
+  @@index([productId])
+}
+
+enum OrderStatus {
+  pending
+  partial
+  completed
+}
