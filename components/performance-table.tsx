@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Search, Loader2, ArrowUpDown } from "lucide-react"
 import { getFilteredPerformanceData } from "@/lib/actions"
-import { useSearchParams } from "next/navigation"
+import { useSearchParams, useRouter } from "next/navigation"
 
 // Definir el tipo para los datos de rendimiento
 type PerformanceData = {
@@ -23,6 +23,7 @@ type PerformanceData = {
 
 export function PerformanceTable() {
   const searchParams = useSearchParams()
+  const router = useRouter()
   const [searchTerm, setSearchTerm] = useState("")
   const [orders, setOrders] = useState<PerformanceData[]>([])
   const [loading, setLoading] = useState(true)
@@ -223,7 +224,7 @@ export function PerformanceTable() {
                     </span>
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button variant="outline" size="sm">
+                    <Button variant="outline" size="sm" onClick={() => router.push(`/picking/proceso/${order.id}`)}>
                       Ver Detalles
                     </Button>
                   </TableCell>

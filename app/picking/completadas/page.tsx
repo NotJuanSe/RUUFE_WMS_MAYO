@@ -44,11 +44,17 @@ export default async function CompletedPickingPage() {
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-500">Fecha de creación:</span>
                     <span className="font-medium">{formatDate(order.createdAt)}</span>
+                </div>
+                  <div className="flex justify-between text-sm mb-4">
+                    <span className="text-gray-500">Fecha de finalización:</span>
+                    <span className="font-medium">{order.completedAt ? formatDate(order.completedAt) : "N/A"}</span>
                   </div>
-                  <div className="flex justify-between text-sm">
+                    <div className="flex justify-between text-sm">
                     <span className="text-gray-500">Productos:</span>
-                    <span className="font-medium">{order._count?.items || 0}</span>
-                  </div>
+                    <span className="font-medium">
+                      {order.items.reduce((total, item) => total + item.quantity, 0)}
+                    </span>
+                    </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-500">Estado:</span>
                     <span className="flex items-center text-green-600 font-medium">
