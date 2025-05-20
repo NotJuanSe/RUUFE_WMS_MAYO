@@ -54,5 +54,5 @@ Este sistema proporciona una interfaz completa para analizar el rendimiento de l
 
 1. Clonar el repositorio:
    ```bash
-   git clone https://github.com/tu-usuario/sistema-rendimiento-picking.git
+   git clone https://github.com/NotJuanSe/RUUFE_WMS_MAYO
    cd sistema-rendimiento-picking
