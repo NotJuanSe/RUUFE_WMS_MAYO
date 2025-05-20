@@ -1,4 +1,5 @@
 import Link from "next/link"
+import { Suspense } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { ArrowLeft } from "lucide-react"
 import { PerformanceChart } from "@/components/performance-chart"
@@ -20,10 +21,15 @@ export default function RendimientoPage() {
         </div>
       </div>
 
-      <PerformanceFilters />
+      {/* Wrap the component that uses useSearchParams in Suspense */}
+      <Suspense fallback={<div className="p-4 border rounded-md bg-gray-100">Cargando filtros...</div>}>
+        <PerformanceFilters />
+      </Suspense>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        <PerformanceStats />
+        <Suspense fallback={<div className="p-4 border rounded-md bg-gray-100">Cargando estadísticas...</div>}>
+          <PerformanceStats />
+        </Suspense>
       </div>
 
       <Card className="mb-6">
@@ -32,7 +38,9 @@ export default function RendimientoPage() {
           <CardDescription>Tiempo promedio y órdenes completadas por día</CardDescription>
         </CardHeader>
         <CardContent className="h-80">
-          <PerformanceChart />
+          <Suspense fallback={<div className="h-full flex items-center justify-center">Cargando gráfico...</div>}>
+            <PerformanceChart />
+          </Suspense>
         </CardContent>
       </Card>
 
@@ -42,7 +50,9 @@ export default function RendimientoPage() {
           <CardDescription>Listado de órdenes completadas con métricas de rendimiento</CardDescription>
         </CardHeader>
         <CardContent>
-          <PerformanceTable />
+          <Suspense fallback={<div className="p-4 text-center">Cargando tabla de datos...</div>}>
+            <PerformanceTable />
+          </Suspense>
         </CardContent>
       </Card>
     </main>

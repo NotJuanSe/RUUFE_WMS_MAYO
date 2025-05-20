@@ -76,7 +76,7 @@ export default function Home() {
           </CardContent>
         </Card>
 
-        <Card>
+        {/* <Card>
           <CardHeader>
             <CardTitle>Configuración</CardTitle>
             <CardDescription>Configura el sistema y los parámetros</CardDescription>
@@ -86,7 +86,7 @@ export default function Home() {
               <Button className="w-full">Configuración</Button>
             </Link>
           </CardContent>
-        </Card>
+        </Card> */}
       </div>
     </div>
   )

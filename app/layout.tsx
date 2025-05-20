@@ -11,7 +11,9 @@ const inter = Inter({ subsets: ["latin"] })
 export const metadata: Metadata = {
   title: "Sistema de Picking RUUFE",
   description: "Sistema de gestión de picking para RUUFE",
-  generator: "v0.dev",
+  generator: "https://github.com/NotJuanSe",
+  icons: {
+    icon: "/favicon.ico"},
 }
 
 export default function RootLayout({

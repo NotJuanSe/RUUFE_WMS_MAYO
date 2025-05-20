@@ -176,7 +176,7 @@ export function SidebarNav() {
                 </AccordionItem>
               </Accordion>
             </li>
-            <li>
+            {/* <li>
               <Link
                 href="/configuracion"
                 className={cn(
@@ -188,11 +188,11 @@ export function SidebarNav() {
                 <Settings className="h-5 w-5 text-gray-500" />
                 <span className="ml-3">Configuración</span>
               </Link>
-            </li>
+            </li> */}
           </ul>
         </nav>
         <div className="border-t p-4">
-          <div className="text-xs text-gray-500">Sistema de Picking RUUFE v1.0</div>
+          <div className="text-xs text-gray-500">Sistema de Picking RUUFE M v1.0</div>
         </div>
       </aside>
     </>
